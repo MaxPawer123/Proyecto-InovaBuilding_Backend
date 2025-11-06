@@ -3,6 +3,49 @@ const router = express.Router();
 const User = require('../models/UserReal');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 
+// GET /api/users/residentes - Obtener todos los residentes con departamentos (admin)
+router.get('/residentes', requireAuth, async (req, res) => {
+  try {
+    const userRole = req.user.rol;
+
+    // Solo administradores pueden ver todos los residentes
+    if (userRole?.toLowerCase() !== 'administrador') {
+      return res.status(403).json({ success: false, message: 'Solo administradores pueden ver residentes' });
+    }
+
+    const { query: dbQuery } = require('../config/database_real');
+    
+    console.log('🔍 Buscando residentes...');
+    
+    const result = await dbQuery(`
+      SELECT 
+        r.id_residente,
+        COALESCE(p.nombres || ' ' || p.apellidos, 'Sin nombre') as nombre_completo,
+        COALESCE(d.nro_depa, 'Sin depto') as numero_depto,
+        d.id_departamento,
+        u.email,
+        u.rol
+      FROM residentes r
+      LEFT JOIN personas p ON r.id_persona = p.id_persona
+      LEFT JOIN departamentos d ON r.id_departamento = d.id_departamento
+      LEFT JOIN users u ON u.id_persona = p.id_persona
+      WHERE r.id_residente IS NOT NULL
+      ORDER BY p.nombres, p.apellidos
+    `);
+
+    console.log('✅ Residentes encontrados:', result.rows.length);
+    if (result.rows.length > 0) {
+      console.log('📋 Primer residente:', result.rows[0]);
+    }
+    
+    res.json({ success: true, data: result.rows });
+  } catch (error) {
+    console.error('❌ Error obteniendo residentes:', error);
+    console.error('❌ Stack:', error.stack);
+    res.status(500).json({ success: false, message: 'Error obteniendo residentes', error: error.message });
+  }
+});
+
 // GET /api/users - Obtener todos los usuarios (acceso público para el dashboard)
 router.get('/', async (req, res) => {
   try {

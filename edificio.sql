@@ -928,3 +928,231 @@ CREATE TABLE estados_cuenta (
 CREATE INDEX estados_cuenta_residente_idx ON estados_cuenta(id_residente);
 CREATE INDEX estados_cuenta_departamento_idx ON estados_cuenta(id_departamento);
 CREATE INDEX estados_cuenta_periodo_idx ON estados_cuenta(periodo);
+
+
+
+Tablas Necesarias para el Módulo de Finanzas
+Basándome en los archivos y funcionalidades implementadas, estas son las tablas necesarias:
+
+1. Tablas Principales de Facturación
+
+
+
+-- Catálogo de conceptos de cargo
+CREATE TABLE conceptos_cargo (
+  id_concepto BIGSERIAL PRIMARY KEY,
+  codigo VARCHAR(30) UNIQUE NOT NULL,
+  nombre VARCHAR(100) NOT NULL,
+  es_recurrente BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Encabezado de factura
+CREATE TABLE facturas2 (
+  id_factura BIGSERIAL PRIMARY KEY,
+  nro VARCHAR(30) UNIQUE NOT NULL,
+  id_residente BIGINT NOT NULL,
+  id_departamento BIGINT NOT NULL,
+  residente_nombre VARCHAR(200) NOT NULL,  -- NUEVO: para mostrar en interfaz
+  departamento VARCHAR(20) NOT NULL,        -- NUEVO: para mostrar en interfaz
+  periodo VARCHAR(7) NOT NULL,
+  fecha_emision DATE NOT NULL,
+  fecha_vencimiento DATE NOT NULL,
+  subtotal NUMERIC(10,2) NOT NULL DEFAULT 0,
+  descuentos NUMERIC(10,2) NOT NULL DEFAULT 0,
+  impuestos NUMERIC(10,2) NOT NULL DEFAULT 0,
+  total NUMERIC(10,2) NOT NULL DEFAULT 0,
+  estado VARCHAR(20) NOT NULL DEFAULT 'pendiente',
+  pdf_url VARCHAR(255) NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_fac2_res FOREIGN KEY (id_residente) REFERENCES residentes(id_residente) ON DELETE CASCADE,
+  CONSTRAINT fk_fac2_dep FOREIGN KEY (id_departamento) REFERENCES departamentos(id_departamento) ON DELETE CASCADE
+);
+
+CREATE INDEX facturas2_res_periodo_idx ON facturas2(id_residente, periodo);
+CREATE INDEX facturas2_estado_idx ON facturas2(estado);
+CREATE INDEX facturas2_periodo_idx ON facturas2(periodo);
+
+-- Detalle de factura
+CREATE TABLE factura_items (
+  id_item BIGSERIAL PRIMARY KEY,
+  id_factura BIGINT NOT NULL,
+  id_concepto BIGINT NOT NULL,
+  descripcion VARCHAR(255) NOT NULL,
+  cantidad NUMERIC(10,2) NOT NULL DEFAULT 1,
+  precio_unitario NUMERIC(10,2) NOT NULL,
+  total_linea NUMERIC(10,2) NOT NULL,
+  id_consumo BIGINT NULL,
+  id_reserva BIGINT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_fi_factura FOREIGN KEY (id_factura) REFERENCES facturas2(id_factura) ON DELETE CASCADE,
+  CONSTRAINT fk_fi_concepto FOREIGN KEY (id_concepto) REFERENCES conceptos_cargo(id_concepto) ON DELETE RESTRICT
+);
+
+CREATE INDEX factura_items_factura_idx ON factura_items(id_factura);
+
+
+
+
+2. Tablas de Pagos y Cobros
+
+
+
+-- Encabezado de pago
+CREATE TABLE pagos2 (
+  id_pago BIGSERIAL PRIMARY KEY,
+  fecha_pago TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  metodo VARCHAR(30) NOT NULL,  -- 'QR', 'EFECTIVO', 'TRANSFERENCIA'
+  referencia VARCHAR(100) NULL,
+  monto_total NUMERIC(10,2) NOT NULL,
+  pagador_tipo VARCHAR(20) NOT NULL DEFAULT 'residente',
+  id_residente BIGINT NULL,
+  observaciones TEXT NULL,
+  estado VARCHAR(20) NOT NULL DEFAULT 'confirmado',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_p2_res FOREIGN KEY (id_residente) REFERENCES residentes(id_residente) ON DELETE SET NULL
+);
+
+CREATE INDEX pagos2_metodo_idx ON pagos2(metodo);
+CREATE INDEX pagos2_estado_idx ON pagos2(estado);
+CREATE INDEX pagos2_fecha_idx ON pagos2(fecha_pago);
+CREATE INDEX pagos2_residente_idx ON pagos2(id_residente);
+
+-- Aplicación del pago a documentos
+CREATE TABLE pagos_aplicaciones (
+  id_aplicacion BIGSERIAL PRIMARY KEY,
+  id_pago BIGINT NOT NULL,
+  tipo_objetivo VARCHAR(20) NOT NULL,  -- 'factura' o 'reserva'
+  id_objetivo BIGINT NOT NULL,
+  monto_aplicado NUMERIC(10,2) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_pa_pago FOREIGN KEY (id_pago) REFERENCES pagos2(id_pago) ON DELETE CASCADE
+);
+
+CREATE INDEX pagos_aplicaciones_pago_idx ON pagos_aplicaciones(id_pago);
+CREATE INDEX pagos_aplicaciones_objetivo_idx ON pagos_aplicaciones(tipo_objetivo, id_objetivo);
+
+
+
+
+3. Tabla de QR Intentos
+
+
+
+CREATE TABLE qr_intentos (
+  id_qr BIGSERIAL PRIMARY KEY,
+  id_factura BIGINT NULL,
+  payload TEXT NOT NULL,
+  estado VARCHAR(20) NOT NULL DEFAULT 'pendiente',
+  vence_en TIMESTAMP NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_qr_factura FOREIGN KEY (id_factura) REFERENCES facturas2(id_factura) ON DELETE SET NULL
+);
+
+CREATE INDEX qr_intentos_estado_idx ON qr_intentos(estado);
+CREATE INDEX qr_intentos_factura_idx ON qr_intentos(id_factura);
+
+
+
+
+
+
+
+4. Tablas de Caja y Movimientos
+
+
+-- Cuentas del edificio
+CREATE TABLE cuentas_edificio (
+  id_cuenta BIGSERIAL PRIMARY KEY,
+  nombre VARCHAR(100) NOT NULL,
+  tipo VARCHAR(20) NOT NULL DEFAULT 'caja',
+  saldo_inicial NUMERIC(12,2) NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Movimientos contables
+CREATE TABLE movimientos_cuenta (
+  id_mov BIGSERIAL PRIMARY KEY,
+  id_cuenta BIGINT NOT NULL,
+  fecha TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  tipo VARCHAR(10) NOT NULL,  -- 'ingreso' o 'egreso'
+  categoria VARCHAR(50) NOT NULL,  -- 'cobranza', 'devolucion', 'nomina', 'reservas', 'mantenimiento'
+  descripcion VARCHAR(255) NOT NULL,
+  monto NUMERIC(12,2) NOT NULL,
+  id_pago BIGINT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_mc_cuenta FOREIGN KEY (id_cuenta) REFERENCES cuentas_edificio(id_cuenta) ON DELETE CASCADE,
+  CONSTRAINT fk_mc_pago FOREIGN KEY (id_pago) REFERENCES pagos2(id_pago) ON DELETE SET NULL
+);
+
+CREATE INDEX movimientos_cuenta_fecha_idx ON movimientos_cuenta(fecha);
+CREATE INDEX movimientos_cuenta_tipo_idx ON movimientos_cuenta(tipo);
+CREATE INDEX movimientos_cuenta_categoria_idx ON movimientos_cuenta(categoria);
+CREATE INDEX movimientos_cuenta_cuenta_idx ON movimientos_cuenta(id_cuenta);
+
+5. Tablas de Nómina (Mejoradas)
+CREATE TABLE nominas (
+    id_nomina BIGSERIAL PRIMARY KEY,
+    id_empleado BIGINT NOT NULL,
+    salario_base NUMERIC(10,2) NOT NULL,
+    bono NUMERIC(10,2) NOT NULL DEFAULT 0,
+    descuento NUMERIC(10,2) NOT NULL DEFAULT 0,
+    total NUMERIC(10,2) NOT NULL,
+    fecha_pago DATE NOT NULL,
+    created_at TIMESTAMP NULL,
+    updated_at TIMESTAMP NULL,
+    CONSTRAINT fk_nom_empleado
+        FOREIGN KEY (id_empleado) REFERENCES empleados(id_empleado) ON DELETE CASCADE
+);
+-- Conceptos de nómina
+CREATE TABLE conceptos_nomina (
+  id_concepto BIGSERIAL PRIMARY KEY,
+  codigo VARCHAR(30) UNIQUE NOT NULL,
+  nombre VARCHAR(100) NOT NULL,
+  tipo VARCHAR(10) NOT NULL,  -- 'ingreso' o 'descuento'
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tabla nominas (ya existe, pero agregar estos campos si no los tiene)
+ALTER TABLE nominas ADD COLUMN IF NOT EXISTS empleado_nombre VARCHAR(200);
+ALTER TABLE nominas ADD COLUMN IF NOT EXISTS cargo VARCHAR(100);
+ALTER TABLE nominas ADD COLUMN IF NOT EXISTS salario_base NUMERIC(10,2) DEFAULT 0;
+ALTER TABLE nominas ADD COLUMN IF NOT EXISTS bono NUMERIC(10,2) DEFAULT 0;
+ALTER TABLE nominas ADD COLUMN IF NOT EXISTS descuento NUMERIC(10,2) DEFAULT 0;
+
+-- Detalle de nómina
+CREATE TABLE nomina_detalles (
+  id_detalle BIGSERIAL PRIMARY KEY,
+  id_nomina BIGINT NOT NULL,
+  id_empleado BIGINT NOT NULL,
+  id_concepto BIGINT NULL,  -- NULL para conceptos libres
+  nombre_concepto VARCHAR(100) NOT NULL,  -- NUEVO: para conceptos libres
+  tipo VARCHAR(10) NOT NULL,  -- 'ingreso' o 'descuento'
+  monto NUMERIC(10,2) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_nd_nom FOREIGN KEY (id_nomina) REFERENCES nominas(id_nomina) ON DELETE CASCADE,
+  CONSTRAINT fk_nd_emp FOREIGN KEY (id_empleado) REFERENCES empleados(id_empleado) ON DELETE CASCADE,
+  CONSTRAINT fk_nd_concepto FOREIGN KEY (id_concepto) REFERENCES conceptos_nomina(id_concepto) ON DELETE SET NULL
+);
+
+CREATE INDEX nomina_detalles_nomina_idx ON nomina_detalles(id_nomina);
+CREATE INDEX nomina_detalles_empleado_idx ON nomina_detalles(id_empleado);
+
+6. Modificaciones a Tabla de Reservas
+
+-- Agregar campos necesarios si no existen
+ALTER TABLE reserva_areas ADD COLUMN IF NOT EXISTS codigo VARCHAR(30) UNIQUE;
+ALTER TABLE reserva_areas ADD COLUMN IF NOT EXISTS residente VARCHAR(200);  -- nombre del residente
+ALTER TABLE reserva_areas ADD COLUMN IF NOT EXISTS area VARCHAR(100);  -- nombre del área
+ALTER TABLE reserva_areas ADD COLUMN IF NOT EXISTS costo_total NUMERIC(10,2) DEFAULT 0;
+
+CREATE INDEX reserva_areas_estado_idx ON reserva_areas(estado);
+CREATE INDEX reserva_areas_codigo_idx ON reserva_areas(codigo);

@@ -1,5 +1,38 @@
 const { query } = require('../config/database_real');
 
+// Obtener todas las reservas (admin)
+exports.getAllReservas = async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user) return res.status(401).json({ success: false, message: 'Autenticación requerida' });
+    
+    // Solo administradores pueden ver todas las reservas
+    if (user.rol?.toLowerCase() !== 'administrador') {
+      return res.status(403).json({ success: false, message: 'Solo administradores pueden ver todas las reservas' });
+    }
+
+    const q = `
+      SELECT r.id_reserva, r.codigo, r.fecha_ini, r.fecha_fin, r.estado, r.costo_total, r.id_area_comun, r.id_residente,
+             a.nombre as area_nombre, a.ubicacion, a.descripcion, a.costo_hora,
+             p.nombres || ' ' || p.apellidos as residente_nombre
+      FROM reserva_areas r
+      LEFT JOIN areas_comunes a ON r.id_area_comun = a.id_area_comun
+      LEFT JOIN residentes res ON r.id_residente = res.id_residente
+      LEFT JOIN personas p ON res.id_persona = p.id_persona
+      ORDER BY r.fecha_ini DESC
+    `;
+    
+    console.log('🔍 Obteniendo todas las reservas (admin)...');
+    const result = await query(q);
+    console.log(`✅ Reservas encontradas: ${result.rows.length}`);
+    
+    res.json({ success: true, data: result.rows });
+  } catch (error) {
+    console.error('❌ Error obteniendo todas las reservas:', error);
+    res.status(500).json({ success: false, message: 'Error obteniendo reservas', error: error.message });
+  }
+};
+
 // Actualizar estado de una reserva
 exports.updateEstado = async (req, res) => {
   try {

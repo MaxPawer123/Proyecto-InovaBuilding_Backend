@@ -1,12 +1,24 @@
 const { Pool } = require('pg');
 
 // Configuración de la base de datos PostgreSQL usando tu estructura real
+// Pool configuration: añadimos opciones de SSL y timeouts recomendados para
+// conexiones a servicios manejados como Supabase. Si usas variables de
+// entorno (recomendado), defínelas en tu archivo .env (DB_HOST, DB_USER, etc.).
 const pool = new Pool({
-  user: process.env.DB_USER || 'postgres',
-  host: process.env.DB_HOST || 'localhost',
-  database: process.env.DB_NAME || 'Edificio',
-  password: process.env.DB_PASSWORD || 'admin',
-  port: process.env.DB_PORT || 5432,
+  user: process.env.DB_USER || 'postgres.ftsonvwshoqxgmacnnsn',
+  host: process.env.DB_HOST || 'aws-1-us-east-1.pooler.supabase.com',
+  database: process.env.DB_NAME || 'postgres',
+  password: process.env.DB_PASSWORD || 'dd8)JBY)/1234',
+  port: process.env.DB_PORT ? Number(process.env.DB_PORT) : 6543,
+  max: process.env.DB_MAX_CLIENTS ? Number(process.env.DB_MAX_CLIENTS) : 10,
+  idleTimeoutMillis: process.env.DB_IDLE_TIMEOUT ? Number(process.env.DB_IDLE_TIMEOUT) : 30000,
+  connectionTimeoutMillis: process.env.DB_CONN_TIMEOUT ? Number(process.env.DB_CONN_TIMEOUT) : 20000,
+  // Supabase / Heroku style services requieren SSL; rechazamos la verificación
+  // si el certificado no es verificable en el entorno local. Para producción,
+  // configura rejectUnauthorized=true y un CA válido.
+  ssl: {
+    rejectUnauthorized: false,
+  },
 });
 
 // Función para conectar y verificar la conexión
@@ -51,6 +63,26 @@ const checkTables = async (client) => {
     // Verificar si hay usuarios registrados
     const userCount = await client.query('SELECT COUNT(*) as count FROM users');
     console.log(`👥 Usuarios registrados: ${userCount.rows[0].count}`);
+
+    // Semilla mínima para conceptos de cargo si está vacío
+    const conceptosExist = await client.query('SELECT COUNT(*) AS count FROM conceptos_cargo').catch(() => ({ rows:[{count:'-1'}] }));
+    if (conceptosExist.rows && Number(conceptosExist.rows[0].count) === 0) {
+      console.log('🌱 Sembrando conceptos_cargo por defecto...');
+      await client.query(`
+        INSERT INTO conceptos_cargo (id_concepto, codigo, nombre, es_recurrente)
+        VALUES 
+          (1, 'AGUA', 'Agua', TRUE),
+          (2, 'LUZ', 'Luz', TRUE),
+          (3, 'GAS', 'Gas', TRUE),
+          (4, 'MANTTO', 'Mantenimiento', TRUE)
+        ON CONFLICT (codigo) DO NOTHING;
+      `);
+      await client.query(`
+        SELECT setval(pg_get_serial_sequence('conceptos_cargo','id_concepto'), 
+                      (SELECT MAX(id_concepto) FROM conceptos_cargo))
+      `);
+      console.log('✅ Conceptos de cargo creados');
+    }
     
   } catch (error) {
     console.error('❌ Error verificando tablas:', error.message);

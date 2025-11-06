@@ -16,7 +16,18 @@ const fs = require('fs');
 
 // Middlewares
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:5174', 'http://127.0.0.1:5173', 'http://127.0.0.1:5174'],
+  origin: [
+    'http://localhost:3000', 
+    'http://localhost:5173', 
+    'http://localhost:5174', 
+    'http://127.0.0.1:5173', 
+    'http://127.0.0.1:5174',
+    'http://localhost:8081', // Metro bundler
+    'http://localhost:8082', // Metro bundler alternativo
+    'http://10.0.2.2:8081',  // Android emulator
+    'http://192.168.0.7:8081', // Tu IP local - CAMBIA ESTO
+    'http://192.168.0.7:8082', // Tu IP local - CAMBIA ESTO
+  ],
   credentials: true,
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
@@ -56,9 +67,24 @@ const alertasRoutes = require('./routes/alertas');
 const ticketsRoutes = require('./routes/tickets');
 const tecnicosRoutes = require('./routes/tecnicos');
 const empleadosRoutes = require('./routes/empleados');
+const nominasRoutes = require('./routes/nominas');
 const notificacionesRoutes = require('./routes/notificaciones');
 const areasRoutes = require('./routes/areas');
 const reservasRoutes = require('./routes/reservas');
+const facturasRoutes = require('./routes/facturas');
+// Log simple para diagnosticar solicitudes al login desde la app móvil
+app.use((req, _res, next) => {
+  if (req.method === 'POST' && req.path === '/api/auth/login') {
+    console.log(`📥 /api/auth/login desde ${req.ip} · origin=${req.headers.origin || '-'} · ua=${req.headers['user-agent'] || '-'}`);
+  }
+  next();
+});
+
+// Endpoint de salud para pruebas rápidas de conectividad
+app.get('/api/ping', (_req, res) => {
+  res.json({ ok: true, time: new Date().toISOString() });
+});
+
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/comunicacion', comunicacionRoutes);
@@ -67,9 +93,11 @@ app.use('/api/alertas', alertasRoutes);
 app.use('/api/tickets', ticketsRoutes);
 app.use('/api/tecnicos', tecnicosRoutes);
 app.use('/api/empleados', empleadosRoutes);
+app.use('/api/nominas', nominasRoutes);
 app.use('/api/notificaciones', notificacionesRoutes);
 app.use('/api/areas', areasRoutes);
 app.use('/api', reservasRoutes);
+app.use('/api/facturas', facturasRoutes);
 
 
 

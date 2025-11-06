@@ -4,6 +4,9 @@ const reservasCtrl = require('../controllers/reservasController');
 const areasCtrl = require('../controllers/areasController');
 const { requireAuth } = require('../middleware/auth');
 
+// Obtener todas las reservas (admin)
+router.get('/reservas', requireAuth, reservasCtrl.getAllReservas);
+
 // Crear reserva para un área (residente)
 router.post('/areas/:id/reservas', requireAuth, areasCtrl.createReservaArea);
 

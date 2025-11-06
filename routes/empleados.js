@@ -1,8 +1,10 @@
 const express = require('express');
 const router = express.Router();
+const { requireAuth } = require('../middleware/auth');
 
 // GET /api/empleados - listar empleados internos con datos de persona y empleado
-router.get('/', async (req, res) => {
+// Solo devuelve empleados que tienen registro en la tabla `empleados` (técnicos internos)
+router.get('/', requireAuth, async (req, res) => {
   try {
     const { query: dbQuery } = require('../config/database_real');
     const q = await dbQuery(`
@@ -13,6 +15,7 @@ router.get('/', async (req, res) => {
       LEFT JOIN personas p ON u.id_persona = p.id_persona
       LEFT JOIN empleados e ON e.id_user = u.id
       WHERE (u.rol = 'Empleado' OR u.rol = 'empleado')
+        AND e.id_empleado IS NOT NULL
       ORDER BY p.nombres, p.apellidos
     `);
 
